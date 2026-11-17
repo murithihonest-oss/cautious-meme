@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dancing Woman</title>
+<style>
+  :root { --stage:#1b1230; --floor:#2c1d4a; --light:#ffd9a0; --ink:#f6ecff; --accent:#ff7a90; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--stage); color: var(--ink); font-family: Georgia, "Times New Roman", serif;
+         display: flex; flex-direction: column; align-items: center; padding: 20px; gap: 14px; }
+  h1 { font-weight: 400; font-style: italic; font-size: clamp(1.6rem, 5vw, 2.4rem); margin: 0; }
+  canvas { width: min(92vw, 520px); aspect-ratio: 1 / 1; background: #120a22; border-radius: 12px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; }
+  button { font: inherit; color: var(--ink); background: transparent; border: 1px solid #6b52a0;
+           border-radius: 999px; padding: 8px 16px; cursor: pointer; }
+  button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #1b1230; }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--light); outline-offset: 2px; }
+  label { display: flex; align-items: center; gap: 8px; }
+  input[type=range] { accent-color: var(--accent); }
+</style>
+</head>
+<body>
+  <h1>Dancing Woman</h1>
+  <canvas id="stage" width="520" height="520" aria-label="Animated woman dancing under a spotlight"></canvas>
+  <div class="bar" role="group" aria-label="Dance style">
+    <button data-style="sway" aria-pressed="true">Sway</button>
+    <button data-style="bounce" aria-pressed="false">Bounce</button>
+    <button data-style="spin" aria-pressed="false">Spin</button>
+    <button id="toggle">Pause</button>
+    <label>Tempo <input id="tempo" type="range" min="0.5" max="2.5" step="0.1" value="1"></label>
+  </div>
+
+<script>
+const canvas = document.getElementById("stage");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+
+// Each style tunes the same skeleton: how much she bobs, sways, swings her arms, and bends her knees.
+const STYLES = {
+  sway:   { bob: 5,  hip: 18, lean: 0.12, arm: 0.9, elbow: 0.5, leg: 0.22, knee: 0.3, spin: false },
+  bounce: { bob: 20, hip: 6,  lean: 0.05, arm: 1.7, elbow: 0.8, leg: 0.3,  knee: 0.7, spin: false },
+  spin:   { bob: 8,  hip: 0,  lean: 0.04, arm: 2.3, elbow: 0.4, leg: 0.2,  knee: 0.4, spin: true }
+};
+let style = "sway", playing = true, tempo = 1, clock = 0, last = performance.now();
+
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+if (reduceMotion) { playing = false; document.getElementById("toggle").textContent = "Play"; }
+
+// Move from a point along an angle (0 = straight down) for a given length.
+function reach(x, y, angle, len) { return [x + Math.sin(angle) * len, y + Math.cos(angle) * len]; }
+
+function limb(ctxRef, x, y, a1, l1, a2, l2, width, color) {
+  const [mx, my] = reach(x, y, a1, l1);
+  const [ex, ey] = reach(mx, my, a1 + a2, l2);
+  ctxRef.strokeStyle = color; ctxRef.lineWidth = width; ctxRef.lineCap = "round"; ctxRef.lineJoin = "round";
+  ctxRef.beginPath(); ctxRef.moveTo(x, y); ctxRef.lineTo(mx, my); ctxRef.lineTo(ex, ey); ctxRef.stroke();
+}
+
+function drawStage() {
+  ctx.fillStyle = "#120a22"; ctx.fillRect(0, 0, W, H);
+  const g = ctx.createRadialGradient(W / 2, 40, 10, W / 2, 420, 300);
+  g.addColorStop(0, "rgba(255,217,160,0.55)"); g.addColorStop(1, "rgba(255,217,160,0)");
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.moveTo(W / 2 - 20, 0); ctx.lineTo(W / 2 + 20, 0);
+  ctx.lineTo(W / 2 + 230, 440); ctx.lineTo(W / 2 - 230, 440); ctx.fill();
+  ctx.fillStyle = "#2c1d4a";
+  ctx.beginPath(); ctx.ellipse(W / 2, 440, 200, 38, 0, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawDancer(t) {
+  const s = STYLES[style];
+  const beat = Math.sin(t), half = Math.sin(t * 2);
+  const hipX = beat * s.hip;
+  const hipY = 330 - Math.abs(half) * s.bob;
+  const lean = beat * s.lean;
+  const skin = "#e8b48f", dress = "#ff7a90", hair = "#2a1a1a";
+
+  ctx.save();
+  ctx.translate(W / 2, 0);
+  if (s.spin) ctx.scale(Math.max(0.25, Math.abs(Math.cos(t / 3))), 1);
+
+  // back arm
+  const shoulder = reach(hipX, hipY, Math.PI + lean, 80);
+  limb(ctx, shoulder[0], shoulder[1], Math.PI - 0.4 + Math.sin(t + Math.PI) * s.arm, 42, Math.sin(t) * s.elbow, 42, 9, skin);
+
+  // legs
+  limb(ctx, hipX - 8, hipY, beat * s.leg, 55, Math.max(0, -beat) * s.knee, 55, 12, skin);
+  limb(ctx, hipX + 8, hipY, -beat * s.leg, 55, Math.max(0, beat) * s.knee, 55, 12, skin);
+
+  // dress: fitted top flaring into a skirt that swings with the hips
+  const swing = Math.sin(t + 1) * 16;
+  ctx.fillStyle = dress;
+  ctx.beginPath();
+  ctx.moveTo(shoulder[0] - 16, shoulder[1]);
+  ctx.lineTo(shoulder[0] + 16, shoulder[1]);
+  ctx.lineTo(hipX + 14, hipY);
+  ctx.lineTo(hipX + 46 + swing, hipY + 62);
+  ctx.lineTo(hipX - 46 + swing, hipY + 62);
+  ctx.lineTo(hipX - 14, hipY);
+  ctx.closePath(); ctx.fill();
+
+  // front arm
+  limb(ctx, shoulder[0], shoulder[1], Math.PI + 0.4 + Math.sin(t) * s.arm, 42, Math.sin(t + 1.5) * s.elbow, 42, 9, skin);
+
+  // head and ponytail
+  const neck = reach(shoulder[0], shoulder[1], Math.PI + lean, 14);
+  const tail = -Math.sin(t - 0.8) * 38;
+  ctx.strokeStyle = hair; ctx.lineWidth = 11; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(neck[0] - 10, neck[1] - 22);
+  ctx.quadraticCurveTo(neck[0] - 40 + tail, neck[1] - 30, neck[0] - 34 + tail, neck[1] + 20); ctx.stroke();
+  ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(neck[0], neck[1] - 20, 20, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = hair; ctx.beginPath(); ctx.arc(neck[0], neck[1] - 24, 20, Math.PI, Math.PI * 2); ctx.fill();
+
+  ctx.restore();
+}
+
+function frame(now) {
+  const dt = (now - last) / 1000; last = now;
+  if (playing) clock += dt * tempo * 4;
+  drawStage(); drawDancer(clock);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+document.querySelectorAll("[data-style]").forEach(btn => btn.addEventListener("click", () => {
+  style = btn.dataset.style;
+  document.querySelectorAll("[data-style]").forEach(b => b.setAttribute("aria-pressed", b === btn));
+}));
+document.getElementById("toggle").addEventListener("click", e => {
+  playing = !playing; e.target.textContent = playing ? "Pause" : "Play";
+});
+document.getElementById("tempo").addEventListener("input", e => { tempo = +e.target.value; });
+</script>
+</body>
+</html>
