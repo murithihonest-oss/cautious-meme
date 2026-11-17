@@ -17,6 +17,8 @@ The dancer is a simple skeleton. Each limb is two connected segments, and sine w
 - Add music and sync the tempo to the beat
 - Add more styles or outfits
 - Add keyboard controls
-
+- huge ass
+- twerks
 ## Author
 Your Name
+honest murithi
